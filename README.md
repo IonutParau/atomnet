@@ -1,6 +1,7 @@
-# AtomNET
+# AtomNET (WIP)
 
-**Atom**ic **NET**working in OpenComputers
+**Atom**ic **NET**working in OpenComputers.
+Work In Progress.
 
 ## Features
 
