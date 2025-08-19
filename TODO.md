@@ -36,12 +36,14 @@ struct awp_request {
     char header[] = "AWP\0";
     uint8_t majorVersion;
     uint8_t minorVersion;
+    awp_header headers[]; // terminated by header with an empty name and body
     uint32_t bodySize;
     uint8_t body[bodySize];
 };
 
 struct awp_response {
     uint16_t responseCode;
+    awp_header headers[]; // terminated by header with an empty name and body
     uint32_t bodySize;
     uint8_t body[bodySize];
 };
