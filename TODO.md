@@ -4,31 +4,17 @@
 
 # For MVP
 
-- OSP, ordered stream protocol
 - AWP over OSP
 - anpm, oppm-like package managet built with AtomNET and AWP
 
-## OSP
-
-`off` is used to order packets, `totalLen` is used to know when to flush.
-
-```c
-struct osp {
-    uint32_t totalLen;
-    uint32_t off;
-    uint16_t len;
-    uint8_t data[len];
-}
-```
-
 ## AWP
 
-Super basic HTTP-like
+Super basic HTTP-like (except binary focused instead of text focused)
 
 ```c
 struct awp_header {
-    char name[]; // newline-terminated, so it can be read with read("l")
-    char body[]; // newline-terminated, so it can be read with read("l")
+    char name[]; // newline-terminated, so it can be read with readUntil("\n")
+    char body[]; // newline-terminated, so it can be read with readUntil("\n")
 };
 
 struct awp_request {

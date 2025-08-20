@@ -479,6 +479,7 @@ function rcps.open(port, vtable, keys)
 	return port
 end
 
+---@param port integer
 function rcps.close(port)
 	rcp.close(port)
 end

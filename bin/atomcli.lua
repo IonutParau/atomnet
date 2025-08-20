@@ -72,7 +72,7 @@ if args[1] == "reload" then
 	local ip = atomnet.address
 	local hostname = atomnet.hostname
 	atomnet.deinit()
-	package.loaded.atomnet = nil
+	package.loaded["atomnet"] = nil
 
 	snp.deinit()
 	package.loaded["atomnet.snp"] = nil
@@ -84,6 +84,7 @@ if args[1] == "reload" then
 	package.loaded["atomnet.rcps"] = nil
 
 	package.loaded["atomnet.dns"] = nil
+	package.loaded["atomnet.osp"] = nil
 
 	require("atomnet").init()
 	require("atomnet").address = ip
