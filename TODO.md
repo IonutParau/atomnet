@@ -12,15 +12,18 @@
 Super basic HTTP-like (except binary focused instead of text focused)
 
 ```c
+// big endian
+
 struct awp_header {
-    char name[]; // newline-terminated, so it can be read with readUntil("\n")
-    char body[]; // newline-terminated, so it can be read with readUntil("\n")
+    char name[]; // NULL-terminated
+    char body[]; // NULL-terminated
 };
 
 struct awp_request {
     char header[] = "AWP\0";
     uint8_t majorVersion;
     uint8_t minorVersion;
+    char resourcePath[]; // NULL-terminated
     awp_header headers[]; // terminated by header with an empty name and body
     uint32_t bodySize;
     uint8_t body[bodySize];

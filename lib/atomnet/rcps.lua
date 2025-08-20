@@ -26,15 +26,16 @@ struct rcps_connected {
 	// encryption stuff
 	union {
 		struct {
-			uint128_t randomIV;
 			char publicKey[]; // rest of packet
 		} stdEncrypt;
 	};
 };
 
 // all stdencrypt packets and acks are encoded like this if encryption is used (before encryption)
-// the actual bytes are encrypted with the stdencrypt algorithm ofc
 struct rcps_stdencrypt_data {
+	// true bytes
+	uint128_t randomIV;
+	// these are the actual bytes that are encrypted with the stdencrypt algorithm ofc
 	uint32_t packetID; // in case of replay attack
 	uint8_t prefixSize; // random amount of bytes
 	uint8_t prefix[prefixSize]; // random bytes, strengthens encryption
@@ -74,7 +75,6 @@ enum rcps_encryption {
 ---@field privateKey unknown
 ---@field publicKey unknown
 ---@field sharedKey string
----@field symmetricIV string
 ---@field acceptedServerKey? string
 ---@field src integer
 ---@field srcPort integer
@@ -267,8 +267,9 @@ local function encryptMessage(conn, data)
 		local packetID = atomnet.randomPacketID()
 		local prefixSize = math.random(1, 255)
 		local prefix = component.data.random(prefixSize)
-		local entireThing = packetID .. string.char(prefixSize) .. prefix .. data
-		return component.data.encrypt(entireThing, conn.sharedKey, conn.symmetricIV)
+		local iv = component.data.random(16)
+		local entireThing = iv .. packetID .. string.char(prefixSize) .. prefix .. data
+		return component.data.encrypt(entireThing, conn.sharedKey, iv)
 	end
 	return data
 end
@@ -281,7 +282,8 @@ local function decryptMessage(conn, data, forced)
 	if conn.state ~= "connected" and not forced then return data end -- can't encrypt if its not connected
 	if conn.encryption == rcps.encryption.stdencrypt256 then
 		-- TODO: check packet ID for replay attacks
-		local entireThing = component.data.decrypt(data, conn.sharedKey, conn.symmetricIV)
+		local iv = data:sub(1, 16)
+		local entireThing = component.data.decrypt(data:sub(17), conn.sharedKey, iv)
 		local prefixSize = entireThing:byte(5, 5)
 		return entireThing:sub(6 + prefixSize)
 	end
@@ -318,7 +320,6 @@ local function getMiddleware(port)
 					publicKey = nil,
 					sharedKey = "",
 					acceptedServerKey = "",
-					symmetricIV = "",
 				}
 
 				local respData = ""
@@ -341,9 +342,8 @@ local function getMiddleware(port)
 
 					local sharedKey = component.data.md5(component.data.ecdh(serverPrivate, theirPublic))
 					conn.sharedKey = sharedKey
-					conn.symmetricIV = component.data.random(16)
 
-					respData = conn.symmetricIV .. serializedPublic
+					respData = assert(serializedPublic)
 				end
 
 				table.insert(_CONNS, conn)
@@ -401,9 +401,8 @@ local function rcp_ack(_, src, srcPort, port, data, packetID)
 	if conn.state == "connecting" then
 		-- finalize encryption
 		if conn.encryption == rcps.encryption.stdencrypt256 then
-			conn.symmetricIV = data:sub(1, 16)
 			-- extract very important data
-			local encodedServerKey = data:sub(17)
+			local encodedServerKey = data
 			if conn.acceptedServerKey and conn.acceptedServerKey ~= encodedServerKey then
 				-- don't even care to send, we don't respect impersonators
 				rcps.disconnect(conn, rcps.exit.impostor, "", true)
@@ -520,7 +519,6 @@ function rcps.connect(dest, destPort, vtable, opts)
 		publicKey = nil,
 		sharedKey = "",
 		acceptedServerKey = nil,
-		symmetricIV = "",
 	}
 
 	if opts.encryption == rcps.encryption.stdencrypt256 then

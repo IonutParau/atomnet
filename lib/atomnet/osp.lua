@@ -3,6 +3,19 @@
 -- The complete stack is OSP -> RCPS -> RCP -> AtomNET -> network hardware
 -- Can be used for things like IRC, HTTP, or more importantly, AWP.
 
+--[[
+
+// big endian
+
+struct osp_packet {
+	uint32_t totalLen; // total length of entire write group
+	uint32_t offset; // offset within write group, for sorting
+	uint16_t len;
+	uint8_t data[len];
+};
+
+]]
+
 local atomnet = require("atomnet")
 local rcps = require("atomnet.rcps")
 local event = require("event")
@@ -106,6 +119,41 @@ function stream:read(n)
 			error("interrupted")
 		end
 	end
+end
+
+--- Reads until a specific byte, and consumes said byte.
+---@param c string
+---@return string?
+function stream:readUntil(c)
+	if self:isClosed() then return end
+	local i = 1
+	while true do
+		-- we scan with i to prevent re-scanning parts that we already checked for
+		local j = string.find(self.readBuffer, c, i, true)
+		if j then
+			local buf = self.readBuffer:sub(1, j-1)
+			self.readBuffer = self.readBuffer:sub(j+1)
+			return buf
+		end
+		i = #self.readBuffer+1 -- we skip over the entire length of the buffer since we scanned it
+		if self:isDisconnected() then -- no possibility for more data
+			local buf = self.readBuffer
+			self.readBuffer = ""
+			return buf
+		end
+		local e = event.pull()
+		if e == "interrupted" then
+			error("interrupted")
+		end
+	end
+end
+
+function stream:readLine()
+	return self:readUntil("\n")
+end
+
+function stream:readCString()
+	return self:readUntil("\0")
 end
 
 ---@param data string

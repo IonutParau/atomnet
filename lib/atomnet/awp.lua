@@ -4,35 +4,7 @@
 
 --[[
 
-// this is done over multiple packets, thus, RCP responses are not part of the protocol and often indicate successful transmission
-// big endian
-
-struct awp_beginRequest {
-	char header[] = "AWP\0";
-	uint8_t majorVersion = 1;
-	uint8_t minorVersion = 0;
-	uint32_t requestBodySize; // includes headers!!!
-	char method[]; // method, standard methods are in awp.methods
-	char path[]; // web resource path
-};
-
-struct awp_beginResponse {
-	uint16_t statusCode;
-	uint32_t responseBodySize; // includes headers!!!
-};
-
-// when the total length matches the expected one, it is flushed
-struct awp_data {
-	uint16_t orderIndex;
-	uint16_t len;
-	uint8_t data[len];
-};
-
-// Data format
-// Header=Value<newline>
-// Header2=Value2<newline>
-// <newline>
-// ...rest of data as raw bytes
+// WIP
 
 ]]
 
@@ -107,6 +79,8 @@ awp.contentTypes = {
 awp.standardHeaders = {
 	--- Compression used
 	compression = "Compression",
+	--- Compression methods accepted in A;B;C... format. If absent, assume no compression is supported
+	compressionAccepted = "Compression-Accepted",
 	--- Authentication code
 	authentication = "Authentication",
 	--- For proxies, the address or host this was forwarded for
@@ -115,7 +89,7 @@ awp.standardHeaders = {
 	host = "Host",
 	--- The content type desired (for requests) or used (for responses)
 	type = "Content-Type",
-	--- The user anget
+	--- The user agent, or client, used.
 	agent = "User-Agent",
 	--- Range would be A-B, where A and B are units of data. They must be numbers followed by an optional unit, K for 1024 bytes, M for 1024 K, G for 1024 M.
 	--- the response should return that range. When compression is used, it should return the compressed version of that range, not the range of the compressed
