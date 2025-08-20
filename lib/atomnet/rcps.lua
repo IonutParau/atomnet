@@ -621,11 +621,12 @@ end
 
 ---@param conn rcps.session
 ---@param data string
+---@param timeout? number
 ---@return boolean, string?
-function rcps.send(conn, data)
+function rcps.send(conn, data, timeout)
 	local packet = string.char(2) .. data
 	packet = encryptMessage(conn, packet)
-	local ok, msg = rcp.write(conn.src, conn.srcPort, conn.port, packet)
+	local ok, msg = rcp.write(conn.src, conn.srcPort, conn.port, packet, timeout)
 	if msg then msg = decryptMessage(conn, msg, true) end
 	if msg == "" then msg = nil end
 	return ok, msg

@@ -162,7 +162,8 @@ atomnet.protocols = {
 			uint8_t hostname[len];
 		};
 	]]
-	RemoteHostsSource = 0x02,
+	-- Deprecated, unsupported, no one likes it
+	--RemoteHostsSource = 0x02,
 	-- see /lib/atomnet/snp.lua
 	SegmentedNodeProtocol = 0x03,
 	-- see /lib/atomnet/rcp.lua
@@ -253,59 +254,20 @@ function atomnet.rememberBacktracking(node)
 	table.insert(atomnet.backtrackingMemory, node)
 end
 
----@type integer?
-atomnet.dns = nil
-
 ---@type table<string, integer>
 atomnet.hosts = {}
 
 atomnet.handleRouting = true
 atomnet.includeInTraceroute = true
 
----@param host string
----@param timeout? integer
----@param maxAttempts? integer
----@return integer
-function atomnet.resolveHostSync(host, timeout, maxAttempts)
-	timeout = timeout or 3
-	maxAttempts = maxAttempts or 3
-	local ok = string.find(host, "^(%d+).(%d+).(%d+).(%d+)$")
-	if ok then
-		return atomnet.parseAddress(host)
-	end
-	if atomnet.hosts[host] then
-		return atomnet.hosts[host]
-	end
-	if atomnet.dns then
-		local request = string.char(0, #host) .. host
-
-		for _=1,maxAttempts do
-			atomnet.sendTo(atomnet.dns, atomnet.protocols.RemoteHostsSource, request)
-			local start = computer.uptime()
-			while true do
-				local elapsed = computer.uptime() - start
-				if elapsed >= timeout then break end
-				local ev, name, addr = event.pull(timeout - elapsed, "atom_dns_resolve")
-
-				if ev == "atom_dns_resolve" and name == host then
-					if addr == 0 then
-						error("unresolved host: " .. host)
-					end
-					return addr
-				end
-
-				if not ev then break end
-			end
-		end
-
-		error("dns timed out")
-	end
-
-	error("unresolved host: " .. host)
-end
-
 function atomnet.randomAddress()
 	return atomnet.addressFromBytes(atomnet.randomPacketID()) -- packet IDs are the same size as addresses
+end
+
+---@param address string
+function atomnet.isValidAddress(address)
+	local ok = string.find(address, "^(%d+).(%d+).(%d+).(%d+)$")
+	return ok ~= nil
 end
 
 ---@param address string
@@ -479,28 +441,6 @@ function atomnet.handleNetworkCheck(src, data)
 	end
 end
 
-function atomnet.handleRemoteHosts(src, data)
-	local type = string.byte(data, 1, 1)
-
-	if type == 0 then
-		local len = string.byte(data, 2, 2)
-		local host = string.sub(data, 3, 2 + len)
-
-		local address = atomnet.hosts[host] or 0
-
-		atomnet.log("Resolved %s to %s for %s", host, atomnet.formatAddress(address), atomnet.formatAddress(src))
-		atomnet.sendTo(src, atomnet.protocols.RemoteHostsSource, string.char(1) .. atomnet.addressToBytes(address) .. string.char(len) .. host)
-	end
-
-	if type == 1 and src == atomnet.dns then
-		local address = atomnet.addressFromBytes(string.sub(data, 2, 5))
-		local len = string.byte(data, 6, 6)
-		local host = string.sub(data, 7, 6 + len)
-
-		computer.pushSignal("atom_dns_resolve", host, address)
-	end
-end
-
 ---@param address integer
 ---@param data string
 function atomnet.ping(address, data)
@@ -605,9 +545,6 @@ function atomnet.receivedTransmission(src, dest, redirectedFor, protocol, hops, 
 		computer.pushSignal("atom_msg", src, protocol, data)
 		if protocol == atomnet.protocols.NetworkCheck then
 			atomnet.handleNetworkCheck(src, data)
-		end
-		if protocol == atomnet.protocols.RemoteHostsSource then
-			atomnet.handleRemoteHosts(src, data)
 		end
 		return
 	end
@@ -835,6 +772,14 @@ function atomnet.discover(msg)
 		atomnet.sendRaw("broadcast", atomnet.mediums.modem, atomnet.actions.DISCOVER, atomnet.addressToBytes(atomnet.address) .. msglen .. msg)
 	end
 	atomnet.sendRaw("broadcast", atomnet.mediums.tunnel, atomnet.actions.DISCOVER, atomnet.addressToBytes(atomnet.address) .. msglen .. msg)
+end
+
+---@param hostname string
+---@param timeout? number
+---@param enforcePublicKey? boolean
+function atomnet.resolveHostSync(hostname, timeout, enforcePublicKey)
+	-- to avoid circular require loop
+	return require("atomnet.dns").resolveHostSync(hostname, timeout, enforcePublicKey)
 end
 
 return atomnet

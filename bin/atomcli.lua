@@ -6,6 +6,7 @@ local atomnet = require("atomnet")
 local snp = require("atomnet.snp")
 local rcp = require("atomnet.rcp")
 local rcps = require("atomnet.rcps")
+local dns = require("atomnet.dns")
 local term = require("term")
 local keys = require("keyboard").keys
 
@@ -81,6 +82,8 @@ if args[1] == "reload" then
 
 	rcps.deinit()
 	package.loaded["atomnet.rcps"] = nil
+
+	package.loaded["atomnet.dns"] = nil
 
 	require("atomnet").init()
 	require("atomnet").address = ip
@@ -195,8 +198,60 @@ if args[1] == "list" then
 		end
 		return
 	end
-	print("Invalid argument to list. Valid ones are: nodes, ranges, backtracking, dedupes, hosts, keyring, certs")
+	if args[2] == "dns" then
+		if #dns.servers == 0 then
+			print("No DNS provided")
+			return
+		end
+		for _, server in ipairs(dns.servers) do
+			local fmt = string.format("%s (%s)", atomnet.formatAddress(server.address), rcps.encryptionName(server.encryption))
+			print(fmt)
+		end
+		return
+	end
+	if args[2] == "domains" then
+		if #dns.cache == 0 then
+			print("No domains cached")
+			return
+		end
+		for _, entry in ipairs(dns.cache) do
+			local fmt = string.format("%s -> %s", entry.hostname, entry.address == 0 and "not found" or atomnet.formatAddress(entry.address))
+			print(fmt)
+		end
+		return
+	end
+	print("Invalid argument to list. Valid ones are: nodes, ranges, backtracking, dedupes, hosts, keyring, certs, dns, domains")
 	return 0
+end
+
+if args[1] == "clear-domains" then
+	dns.cache = {}
+	return
+end
+
+if args[1] == "add-dns" then
+	local addr = atomnet.resolveHostSync(args[2])
+	local cert = assert(rcps.encryption[args[3]], "bad encryption")
+	---@type dns.server
+	local server = {
+		address = addr,
+		encryption = cert,
+	}
+	table.insert(dns.servers, server)
+	return
+end
+
+if args[1] == "rm-dns" then
+	local addr = atomnet.resolveHostSync(args[2])
+
+	for i=1, #dns.servers do
+		if dns.servers[i].address == addr then
+			table.remove(dns.servers, i)
+			return
+		end
+	end
+	print("no such DNS")
+	return
 end
 
 if args[1] == "add-cert" then
@@ -501,27 +556,8 @@ if args[1] == "set-host" then
 	return
 end
 
-if args[1] == "set-dns" then
-	if args[2] then
-		local ip = atomnet.parseAddress(args[2])
-		atomnet.dns = ip
-		return
-	end
-	atomnet.dns = nil
-	return
-end
-
-if args[1] == "get-dns" then
-	if atomnet.dns then
-		print(atomnet.formatAddress(atomnet.dns))
-		return
-	end
-	print("no DNS server configured")
-	return
-end
-
 if args[1] == "resolve" then
-	local ip = atomnet.resolveHostSync(args[2])
+	local ip = atomnet.resolveHostSync(args[2], tonumber(opts.timeout), opts.s)
 	print(atomnet.formatAddress(ip))
 	return
 end

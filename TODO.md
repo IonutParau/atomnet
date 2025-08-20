@@ -4,7 +4,6 @@
 
 # For MVP
 
-- DNS over RCPS, with options for multiple DNS servers, DNS caching and support for DNS chains
 - OSP, ordered stream protocol
 - AWP over OSP
 - anpm, oppm-like package managet built with AtomNET and AWP
@@ -15,8 +14,8 @@
 
 ```c
 struct osp {
-    uint32_t off;
     uint32_t totalLen;
+    uint32_t off;
     uint16_t len;
     uint8_t data[len];
 }
