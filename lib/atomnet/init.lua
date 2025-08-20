@@ -387,7 +387,7 @@ end
 ---@type {hash: string, expires: number}[]
 atomnet.lastPackets = {}
 
-local _MAX_LAST_PACKETS = 512
+local _MAX_LAST_PACKETS = 64
 
 ---@param src integer
 ---@param dest integer
@@ -650,9 +650,19 @@ function atomnet.cleanUpBacktracking()
 	end
 end
 
+function atomnet.cleanUpDedupes()
+	while true do
+		local now = computer.uptime()
+		if not atomnet.lastPackets[1] then break end
+		if atomnet.lastPackets[1].expires > now then break end
+		table.remove(atomnet.lastPackets, 1)
+	end
+end
+
 local function discoveryClock()
 	atomnet.forgetAllAfter(_DISCOVERY_INTERVAL*2)
 	atomnet.cleanUpBacktracking()
+	atomnet.cleanUpDedupes()
 
 	atomnet.discover(atomnet.hostname)
 end
