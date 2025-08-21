@@ -27,6 +27,7 @@ local event = require("event")
 ---@field readBuffer string
 ---@field pendingReadBufferSize integer
 ---@field pendingReadBuffer {off: integer, data: string}[]
+---@field packetCount integer
 local stream = {}
 stream.__index = stream
 
@@ -43,11 +44,13 @@ function stream.new(session)
 		readBuffer = "",
 		pendingReadBufferSize = 0,
 		pendingReadBuffer = {},
+		packetCount = 0,
 	}, stream)
 end
 
 ---@param packet string
 function stream:_unsafe_handlePacket(packet)
+	self.packetCount = self.packetCount + 1
 	local totalLen, off, len = string.unpack(">I4>I4>I2", packet)
 	local data = packet:sub(11, 10 + len)
 	self:_unsafe_addPending(totalLen, off, data)
@@ -99,6 +102,20 @@ function stream:getBufferSize()
 	return #self.readBuffer
 end
 
+---@param c string
+---@param n? integer
+---@return boolean
+function stream:bufferHas(c, n)
+	n = n or 1
+	local ptr = 1
+	for _=1,n do
+		local i = string.find(self.readBuffer, c, ptr, true)
+		if i == nil then return false end
+		ptr = i + 1
+	end
+	return true
+end
+
 ---@param n integer
 ---@return string?
 function stream:read(n)
@@ -148,10 +165,12 @@ function stream:readUntil(c)
 	end
 end
 
+---@return string?
 function stream:readLine()
 	return self:readUntil("\n")
 end
 
+---@return string?
 function stream:readCString()
 	return self:readUntil("\0")
 end

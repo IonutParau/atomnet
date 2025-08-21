@@ -276,7 +276,7 @@ end
 
 ---@param conn rcps.session
 ---@param data string
----@param forced boolean
+---@param forced? boolean
 ---@return string
 local function decryptMessage(conn, data, forced)
 	if conn.state ~= "connected" and not forced then return data end -- can't encrypt if its not connected

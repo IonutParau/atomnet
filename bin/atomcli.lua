@@ -85,6 +85,7 @@ if args[1] == "reload" then
 
 	package.loaded["atomnet.dns"] = nil
 	package.loaded["atomnet.osp"] = nil
+	package.loaded["atomnet.awp"] = nil
 
 	require("atomnet").init()
 	require("atomnet").address = ip

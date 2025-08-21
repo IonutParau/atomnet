@@ -291,6 +291,10 @@ end
 
 ---@return integer
 function rcp.findAvailablePort()
+	local r = math.random(rcp.MIN_PORT_ALLOC, rcp.MAX_PORT_ALLOC)
+	-- gambling
+	if not _PORT_MAP[r] then return r end
+
 	local p = rcp.MIN_PORT_ALLOC
 	while _PORT_MAP[p] do
 		p = p + 1

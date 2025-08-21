@@ -792,4 +792,17 @@ function atomnet.resolveHostSync(hostname, timeout, enforcePublicKey)
 	return require("atomnet.dns").resolveHostSync(hostname, timeout, enforcePublicKey)
 end
 
+---@param size integer
+---@return string
+function atomnet.formatSize(size)
+	local units = {"B", "KiB", "MiB", "GiB"}
+	local unit = 1
+
+	while unit < #units and size >= 1024 do
+		unit = unit + 1
+		size = size / 1024
+	end
+	return string.format("%.2f%s", size, units[unit])
+end
+
 return atomnet
