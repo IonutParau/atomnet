@@ -8,8 +8,7 @@
 // big endian
 
 struct osp_packet {
-	uint32_t totalLen; // total length of entire write group
-	uint32_t offset; // offset within write group, for sorting
+	uint32_t offset; // offset within the socket, for ordering
 	uint16_t len;
 	uint8_t data[len];
 };
@@ -25,9 +24,12 @@ local event = require("event")
 ---@field data any
 ---@field session rcps.session
 ---@field readBuffer string
----@field pendingReadBufferSize integer
+---@field currentOffset integer
+---@field writingOffset integer
 ---@field pendingReadBuffer {off: integer, data: string}[]
 ---@field packetCount integer
+---@field pendingWriteBuffer {data: string, blockSize: integer}[]
+---@field pendingWritePacketsLeft integer
 local stream = {}
 stream.__index = stream
 
@@ -42,45 +44,42 @@ function stream.new(session)
 		id = atomnet.randomPacketID(),
 		session = session,
 		readBuffer = "",
-		pendingReadBufferSize = 0,
+		currentOffset = 0,
+		writingOffset = 0,
 		pendingReadBuffer = {},
 		packetCount = 0,
+		pendingWriteBuffer = {},
+		pendingWritePacketsLeft = 0,
 	}, stream)
 end
 
 ---@param packet string
 function stream:_unsafe_handlePacket(packet)
 	self.packetCount = self.packetCount + 1
-	local totalLen, off, len = string.unpack(">I4>I4>I2", packet)
-	local data = packet:sub(11, 10 + len)
-	self:_unsafe_addPending(totalLen, off, data)
+	local off, len = string.unpack(">I4>I2", packet)
+	local data = packet:sub(7, 6 + len)
+	self:_unsafe_addPending(off, data)
 end
 
----@param totalLen integer
 ---@param off integer
 ---@param data string
-function stream:_unsafe_addPending(totalLen, off, data)
+function stream:_unsafe_addPending(off, data)
 	table.insert(self.pendingReadBuffer, {
 		off = off,
 		data = data,
 	})
-	self.pendingReadBufferSize = self.pendingReadBufferSize + #data
-	if self.pendingReadBufferSize >= totalLen then
-		self:_unsafe_flushPending()
-	end
-end
-
-function stream:_unsafe_flushPending()
 	table.sort(self.pendingReadBuffer, function(a, b)
 		return a.off < b.off
 	end)
 
-	for _, buffer in ipairs(self.pendingReadBuffer) do
-		self.readBuffer = self.readBuffer .. buffer.data
+	while self.pendingReadBuffer[1].off == self.currentOffset do
+		local d = self.pendingReadBuffer[1].data
+		self.readBuffer = self.readBuffer .. d
+		self.currentOffset = self.currentOffset + #d
+		table.remove(self.pendingReadBuffer, 1)
+		if not self.pendingReadBuffer[1] then break end
 	end
 
-	self.pendingReadBuffer = {}
-	self.pendingReadBufferSize = 0
 	event.push("osp_data", self.id)
 end
 
@@ -175,30 +174,70 @@ function stream:readCString()
 	return self:readUntil("\0")
 end
 
+function stream:_unsafe_handleAck()
+	self.pendingWritePacketsLeft = self.pendingWritePacketsLeft - 1
+	if self.pendingWritePacketsLeft == 0 and #self.pendingWriteBuffer > 0 then
+		local buf = table.remove(self.pendingWriteBuffer, 1)
+		self:writeAsync(buf.data, buf.blockSize)
+	end
+end
+
 ---@param data string
 ---@param blockSize? integer
-function stream:write(data, blockSize)
-	if self:isClosed() then return end
+function stream:writeAsync(data, blockSize)
+	if self:isDisconnected() then return end
 
 	blockSize = blockSize or 4096
 	assert(blockSize <= 65535, "invalid blocksize") -- u16 limit
 
-	-- TODO: write in parallel to increase bandwidth and benefit from the OSP protocol's ordering guarantees
+	if self:writesPending() then
+		table.insert(self.pendingWriteBuffer, {
+			data = data,
+			blockSize = blockSize,
+		})
+		return
+	end
 
-	local off = 0
-	while off < #data do
-		local chunk = string.sub(data, off+1, off+blockSize)
-		local packet = string.pack(">I4>I4>I2", #data, off, #chunk) .. chunk
-		assert(rcps.send(self.session, packet))
-		off = off + #chunk
+	local packetCount = math.ceil(#data / blockSize)
+	self.pendingWritePacketsLeft = packetCount
+	for i=1, #data, blockSize do
+		local chunk = data:sub(i, i + blockSize - 1)
+		local encoded = string.pack(">I4>I2", self.writingOffset + i - 1, #chunk) .. chunk
+		rcps.sendAsync(self.session, encoded)
+	end
+	self.writingOffset = self.writingOffset + #data
+end
+
+---@param data string
+---@param blockSize? integer
+function stream:write(data, blockSize)
+	if self:isDisconnected() then return end
+
+	self:writeAsync(data, blockSize)
+	self:blockForWrites()
+end
+
+function stream:blockForWrites()
+	while true do
+		if not self:writesPending() then
+			break
+		end
+		local e = event.pull()
+		if e == "interrupted" then
+			error("interrupted", 2)
+		end
 	end
 end
 
+function stream:writesPending()
+	return self.pendingWritePacketsLeft > 0 and (not self:isDisconnected())
+end
+
 function stream:disconnect()
+	self:blockForWrites()
 	rcps.disconnect(self.session, rcps.exit.closed, "")
 	-- cleans up memory faster
 	self.pendingReadBuffer = {}
-	self.pendingReadBufferSize = 0
 end
 
 function stream:close()
@@ -227,6 +266,7 @@ local _CLIENT_VTABLE = {
 		---@type osp.stream
 		local s = sesh.data
 		if not accepted then s:disconnect() end
+		s:_unsafe_handleAck()
 	end,
 	sent = function (sesh, data)
 		---@type osp.stream
@@ -278,6 +318,7 @@ function osp.open(port, callback, keys)
 			---@type osp.stream
 			local s = sesh.data
 			if not accepted then s:disconnect() end
+			s:_unsafe_handleAck()
 		end,
 		sent = function (sesh, data)
 			---@type osp.stream

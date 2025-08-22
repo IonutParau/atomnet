@@ -265,18 +265,17 @@ end
 ---@param body string
 function server:respond(request, status, headers, body)
 	local function f()
-		-- split over multiple writes to respond as quickly as possible
-		request.stream:write(string.pack(">I2>I4", status, #body))
-		local headerStr = ""
-
+		-- super buffered
+		local buf = ""
+		buf = buf .. string.pack(">I2>I4", status, #body)
 		for name, val in pairs(headers) do
-			headerStr = headerStr .. name .. "\0" .. val .. "\0"
+			buf = buf .. name .. "\0" .. val .. "\0"
 		end
 
-		headerStr = headerStr .. "\0\0"
-		request.stream:write(headerStr)
-
-		request.stream:write(body)
+		buf = buf .. "\0\0"
+		request.stream:writeAsync(buf .. body)
+		-- we're done here
+		request.state = "done"
 	end
 
 	local ok, err = pcall(f) -- sometimes race conditions cause errors if we send something while a nasty evil connection is being closed
@@ -290,6 +289,10 @@ function server:processRequest(request)
 	-- if bro disconnected before we sent them a response, fuck that guy
 	if request.stream:isDisconnected() then
 		request.state = "done"
+		return
+	end
+	-- we're already responding to it
+	if request.stream:writesPending() then
 		return
 	end
 
@@ -306,7 +309,7 @@ function server:processRequest(request)
 			[awp.standardHeaders.host] = request.server.config.host,
 		}, "timeout")
 		request.state = "done"
-		request.stream:close()
+		self:log("Request timed out")
 		return
 	end
 
@@ -319,7 +322,6 @@ function server:processRequest(request)
 					[awp.standardHeaders.host] = request.server.config.host,
 				}, "missing header")
 				request.state = "done"
-				request.stream:close()
 				return
 			end
 			local major = request.stream:read(1):byte(1, 1)
@@ -331,7 +333,6 @@ function server:processRequest(request)
 					[awp.standardHeaders.host] = request.server.config.host,
 				}, "outdated")
 				request.state = "done"
-				request.stream:close()
 				return
 			end
 			request.majorVersion = major
@@ -376,7 +377,7 @@ function server:processRequest(request)
 	if request.state == "body" then
 		if request.stream:getBufferSize() >= request.bodySize then
 			local body = request.stream:read(request.bodySize) or ""
-			self:log("Body: %s", body)
+			self:log("Body: %s", atomnet.formatSize(#body))
 			local ok, code, headers, resp = pcall(self.config.handler, request.method, request.resourcePath, request.headers, body)
 			if not ok then
 				local err = code
@@ -385,17 +386,17 @@ function server:processRequest(request)
 				code = awp.statusCodes.internalServerError
 				headers = {}
 			end
-			self:log("Response: %d %s", code, resp)
+			self:log("Response: %d %s", code, atomnet.formatSize(#resp))
 
 			request.state = "done"
 			self:respond(request, code, headers, resp)
-			request.stream:close()
 		end
 	end
 end
 
+---@param request awp.serverSideRequest
 function server:isRequestOver(request)
-	return request.state == "done"
+	return request.state == "done" and (not request.stream:writesPending())
 end
 
 function server:process()
@@ -405,6 +406,7 @@ function server:process()
 
 	for i=#self.requests, 1, -1 do
 		if self:isRequestOver(self.requests[i]) then
+			self.requests[i].stream:close()
 			table.remove(self.requests, i)
 		end
 	end
@@ -530,10 +532,7 @@ function awp.requestConnection(method, uri, body, headers, opts)
 		buf = buf .. name .. "\0" .. val .. "\0"
 	end
 	buf = buf .. "\0\0"
-	conn:write(buf)
-	-- we do 2 trips for downloads
-	-- TODO: improve *downloads* so this can be 1 chunk
-	conn:write(body)
+	conn:write(buf .. body)
 	return conn
 end
 
@@ -611,7 +610,11 @@ function awp.download(method, uri, body, headers, opts)
 end
 
 function download:getBytesDownloaded()
-	return self.stream:getBufferSize() + self.stream.pendingReadBufferSize
+	local n = self.stream:getBufferSize()
+	for _, pending in ipairs(self.stream.pendingReadBuffer) do
+		n = n + #pending.data
+	end
+	return n
 end
 
 function download:isDone()
