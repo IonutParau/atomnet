@@ -805,4 +805,32 @@ function atomnet.formatSize(size)
 	return string.format("%.2f%s", size, units[unit])
 end
 
+-- The maximum amount of data that can be sent.
+-- This limit is nota logical limit, thus sending this amount of data
+-- in a single write will error due to headers adding too much data.
+-- Use recommendedBufferSize() for the size
+-- Returns 0 if there is NO available transmission hardware
+function atomnet.physicalHardwareLimit()
+	local hardwareLimit = math.huge
+
+	if atomnet.primaryModem then
+		hardwareLimit = math.min(hardwareLimit, atomnet.primaryModem.maxPacketSize())
+	end
+
+	for tunnel in component.list("tunnel", true) do
+		hardwareLimit = math.min(hardwareLimit, component.invoke(tunnel, "maxPacketSize"))
+	end
+
+	if hardwareLimit == math.huge then return 0 end
+
+	return hardwareLimit
+end
+
+-- The recommended amount of data to send at once in a single packet, regardless of protocol
+-- This is the minimum packet size limit of all available transmission hardware minus some space for protocol headers.
+-- Do note that the size sent via transmission includes AtomNET headers as well.
+function atomnet.recommendedBufferSize()
+	return math.max(atomnet.physicalHardwareLimit() - 512, 0)
+end
+
 return atomnet

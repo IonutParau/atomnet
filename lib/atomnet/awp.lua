@@ -34,6 +34,7 @@ struct awp_response {
 local event = require("event")
 local atomnet = require("atomnet")
 local osp = require("atomnet.osp")
+local rcps = require("atomnet.rcps")
 local component = require("component")
 local computer = require("computer")
 
@@ -435,7 +436,6 @@ end
 ---@class awp.connectOpts
 ---@field rcps? rcps.connectOpts
 ---@field noDefaultHeaders? boolean
----@field noAutoCompression? boolean
 ---@field connectTimeout? number
 ---@field secure? boolean
 
@@ -478,46 +478,24 @@ function awp.requestConnection(method, uri, body, headers, opts)
 		if not h[awp.standardHeaders.agent] then
 			h[awp.standardHeaders.agent] = awp.defaultAgent
 		end
-
-		---@type awp.compression[]
-		local compressions = {
-			awp.compression.deflate,
-		}
-
-		if not h[awp.standardHeaders.compressionAccepted] then
-			---@type awp.compression[]
-			local supported = {}
-
-			for _, c in ipairs(supported) do
-				if awp.compressionSupported(c, #body) then
-					table.insert(supported, c)
-				end
-			end
-
-			if #supported > 0 then
-				h[awp.standardHeaders.compressionAccepted] = table.concat(supported, ';')
-			end
-		end
-
-		if (not h[awp.standardHeaders.compression]) and (not opts.noAutoCompression) then
-			--- Assumes server supports the compression even if we might not
-			--- This is, ofc, questionable.
-			---@type string?
-			local comp
-			for _, c in ipairs(compressions) do
-				if awp.compressionSupported(c, #body) then
-					comp = c
-				end
-			end
-
-			if comp then
-				h[awp.standardHeaders.compression] = comp
-				body = awp.compress(comp, body)
-			end
-		end
 	end
 
 	local addr = atomnet.resolveHostSync(hostStr)
+
+	opts.rcps = opts.rcps or {}
+
+	if opts.secure then
+		local encList = {
+			rcps.encryption.stdencrypt256,
+		}
+
+		for _, enc in ipairs(encList) do
+			if rcps.encryptionSupported(enc) then
+				opts.rcps.encryption = enc
+				opts.rcps.serverPublicKey = rcps.downloadKey(addr, port, enc)
+			end
+		end
+	end
 
 	local conn = osp.connectSync(addr, port, opts.connectTimeout, opts.rcps)
 	if not conn then

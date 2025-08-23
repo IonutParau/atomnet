@@ -119,6 +119,7 @@ end
 ---@return string?
 function stream:read(n)
 	if self:isClosed() then return end
+	self:blockForWrites()
 	while true do
 		if #self.readBuffer >= n then
 			local buf = self.readBuffer:sub(1, n)
@@ -142,6 +143,7 @@ end
 ---@return string?
 function stream:readUntil(c)
 	if self:isClosed() then return end
+	self:blockForWrites()
 	local i = 1
 	while true do
 		-- we scan with i to prevent re-scanning parts that we already checked for
@@ -187,7 +189,7 @@ end
 function stream:writeAsync(data, blockSize)
 	if self:isDisconnected() then return end
 
-	blockSize = blockSize or 4096
+	blockSize = blockSize or atomnet.recommendedBufferSize()
 	assert(blockSize <= 65535, "invalid blocksize") -- u16 limit
 
 	if self:writesPending() then
@@ -255,22 +257,26 @@ local _CLIENT_VTABLE = {
 	disconnected = function (sesh, exitCode, msg)
 		---@type osp.stream
 		local s = sesh.data
+		if not s then return end
 		s:disconnect()
 	end,
 	timeout = function (sesh, packetID)
 		---@type osp.stream
 		local s = sesh.data
+		if not s then return end
 		s:disconnect()
 	end,
 	responded = function (sesh, packetID, accepted, response)
 		---@type osp.stream
 		local s = sesh.data
+		if not s then return end
 		if not accepted then s:disconnect() end
 		s:_unsafe_handleAck()
 	end,
 	sent = function (sesh, data)
 		---@type osp.stream
 		local s = sesh.data
+		if not s then return false, "" end
 		s:_unsafe_handlePacket(data)
 		return true, ""
 	end,

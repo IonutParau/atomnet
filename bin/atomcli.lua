@@ -31,6 +31,19 @@ if args[1] == "get-ip" then
 	return
 end
 
+if args[1] == "buffer-size" then
+	local bs = atomnet.recommendedBufferSize()
+	local lim = atomnet.physicalHardwareLimit()
+	local fmt = string.format("%d (%.2f%%)", bs, bs / lim * 100)
+	print(fmt)
+	return
+end
+
+if args[1] == "hardware-limit" then
+	print(atomnet.physicalHardwareLimit())
+	return
+end
+
 if args[1] == "set-reliability" then
 	atomnet.reliability = (tonumber(args[2]) or 100) / 100
 	print((atomnet.reliability * 100) .. "%")
@@ -86,6 +99,7 @@ if args[1] == "reload" then
 	package.loaded["atomnet.dns"] = nil
 	package.loaded["atomnet.osp"] = nil
 	package.loaded["atomnet.awp"] = nil
+	package.loaded["atomnet.rfs"] = nil
 
 	require("atomnet").init()
 	require("atomnet").address = ip
@@ -756,7 +770,7 @@ if args[1] == "wiretap" then
 		local src = atomnet.formatAddress(atomnet.addressFromBytes(srcBytes))
 		local dest = atomnet.formatAddress(atomnet.addressFromBytes(destBytes))
 
-		local f = string.format("(%s) %s -> %s: (%dB) %q", protocolName, src, dest, #data, data)
+		local f = string.format("(%s) %s -> %s: (%dB) %q", protocolName, src, dest, #data, opts.sizeonly and "sizeonly" or data)
 		print(f)
 	end
 
