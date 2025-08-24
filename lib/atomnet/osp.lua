@@ -201,7 +201,6 @@ function stream:_unsafe_handleAck()
 end
 
 function stream:_unsafe_handleLoss()
-	print("packet loss")
 	self.packetsWereLost = true
 	self.congestionWindow = math.max(self.congestionWindow - 1, osp.minimumCongestionWindow)
 end
@@ -215,8 +214,6 @@ function stream:writeAsync(data, blockSize, maxConcurrentPackets)
 	blockSize = blockSize or atomnet.recommendedBufferSize()
 	maxConcurrentPackets = maxConcurrentPackets or self.congestionWindow
 	assert(blockSize <= 65535, "invalid blocksize") -- u16 limit
-
-	print("maxConcurrentPackets", maxConcurrentPackets)
 
 	if self:writesPending() then
 		table.insert(self.pendingWriteBuffer, {
