@@ -21,8 +21,8 @@ local event = require("event")
 
 local osp = {}
 
-osp.minimumCongestionWindow = 4
-osp.maximumCongestionWindow = 32
+osp.minimumCongestionWindow = 1
+osp.maximumCongestionWindow = 4
 
 ---@class osp.stream
 ---@field id string
@@ -39,7 +39,6 @@ osp.maximumCongestionWindow = 32
 ---@field packetsWereLost boolean
 local stream = {}
 stream.__index = stream
-
 
 ---@param session rcps.session
 ---@return osp.stream
