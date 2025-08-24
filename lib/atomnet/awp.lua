@@ -296,6 +296,10 @@ function server:processRequest(request)
 	if request.stream:writesPending() then
 		return
 	end
+	if request.state == "done" then
+		request.stream:close()
+		return
+	end
 
 	local now = computer.uptime()
 
@@ -482,7 +486,9 @@ function awp.requestConnection(method, uri, body, headers, opts)
 
 	local addr = atomnet.resolveHostSync(hostStr)
 
-	opts.rcps = opts.rcps or {}
+	opts.rcps = opts.rcps or {
+		encryption = rcps.encryption.none,
+	}
 
 	if opts.secure then
 		local encList = {

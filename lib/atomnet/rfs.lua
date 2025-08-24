@@ -130,6 +130,13 @@ local rfs = {}
 
 rfs.port = 21
 
+rfs.statFlags = {
+	readable = 1,
+	writable = 2,
+	executable = 4,
+	directory = 8,
+}
+
 ---@class rfs.session
 ---@field token string
 ---@field stream osp.stream

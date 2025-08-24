@@ -68,6 +68,7 @@ enum rcps_encryption {
 ---@field sent fun(sesh: rcps.session, data: string): boolean, string
 ---@field responded fun(sesh: rcps.session, packetID: string, accepted: boolean, response: string)
 ---@field timeout fun(sesh: rcps.session, packetID: string)
+---@field lost fun(sesh: rcps.session, packetID: string)
 
 ---@class rcps.session
 ---@field serverSide boolean
@@ -451,16 +452,31 @@ local function rcp_timeout(_, src, srcPort, port, packetID)
 	conn.vtable.timeout(conn, packetID)
 end
 
+---@param src atomnet.address
+---@param srcPort integer
+---@param port integer
+---@param packetID string
+local function rcp_lost(_, src, srcPort, port, packetID)
+	local conn = getConnection(src, srcPort, port)
+	if not conn then return end
+	if conn.state == "connecting" then
+		return
+	end
+	conn.vtable.lost(conn, packetID)
+end
+
 function rcps.init()
 	event.listen("rcp_ack", rcp_ack)
 	event.listen("rcp_rejected", rcp_rejected)
 	event.listen("rcp_timeout", rcp_timeout)
+	event.listen("rcp_lost", rcp_lost)
 end
 
 function rcps.deinit()
 	event.ignore("rcp_ack", rcp_ack)
 	event.ignore("rcp_rejected", rcp_rejected)
 	event.ignore("rcp_timeout", rcp_timeout)
+	event.ignore("rcp_lost", rcp_lost)
 end
 
 ---@param port? integer
@@ -559,6 +575,7 @@ rcps.nothingTable = {
 	end,
 	responded = function (sesh, packetID, accepted, response) end,
 	timeout = function (sesh, packetID) end,
+	lost = function (sesh, packetID) end,
 }
 
 ---@param dest atomnet.address

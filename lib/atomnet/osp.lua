@@ -19,6 +19,11 @@ local atomnet = require("atomnet")
 local rcps = require("atomnet.rcps")
 local event = require("event")
 
+local osp = {}
+
+osp.minimumCongestionWindow = 4
+osp.maximumCongestionWindow = 32
+
 ---@class osp.stream
 ---@field id string
 ---@field data any
@@ -30,8 +35,11 @@ local event = require("event")
 ---@field packetCount integer
 ---@field pendingWriteBuffer {data: string, blockSize: integer}[]
 ---@field pendingWritePacketsLeft integer
+---@field congestionWindow integer
+---@field packetsWereLost boolean
 local stream = {}
 stream.__index = stream
+
 
 ---@param session rcps.session
 ---@return osp.stream
@@ -50,6 +58,8 @@ function stream.new(session)
 		packetCount = 0,
 		pendingWriteBuffer = {},
 		pendingWritePacketsLeft = 0,
+		congestionWindow = osp.minimumCongestionWindow,
+		packetsWereLost = false,
 	}, stream)
 end
 
@@ -178,19 +188,35 @@ end
 
 function stream:_unsafe_handleAck()
 	self.pendingWritePacketsLeft = self.pendingWritePacketsLeft - 1
-	if self.pendingWritePacketsLeft == 0 and #self.pendingWriteBuffer > 0 then
-		local buf = table.remove(self.pendingWriteBuffer, 1)
-		self:writeAsync(buf.data, buf.blockSize)
+	if self.pendingWritePacketsLeft == 0 then
+		-- successful transmission
+		if not self.packetsWereLost then
+			self.congestionWindow = math.min(self.congestionWindow * 2, osp.maximumCongestionWindow)
+		end
+		if #self.pendingWriteBuffer > 0 then
+			local buf = table.remove(self.pendingWriteBuffer, 1)
+			self:writeAsync(buf.data, buf.blockSize)
+		end
 	end
+end
+
+function stream:_unsafe_handleLoss()
+	print("packet loss")
+	self.packetsWereLost = true
+	self.congestionWindow = math.max(self.congestionWindow - 1, osp.minimumCongestionWindow)
 end
 
 ---@param data string
 ---@param blockSize? integer
-function stream:writeAsync(data, blockSize)
+---@param maxConcurrentPackets? integer
+function stream:writeAsync(data, blockSize, maxConcurrentPackets)
 	if self:isDisconnected() then return end
 
 	blockSize = blockSize or atomnet.recommendedBufferSize()
+	maxConcurrentPackets = maxConcurrentPackets or self.congestionWindow
 	assert(blockSize <= 65535, "invalid blocksize") -- u16 limit
+
+	print("maxConcurrentPackets", maxConcurrentPackets)
 
 	if self:writesPending() then
 		table.insert(self.pendingWriteBuffer, {
@@ -198,6 +224,16 @@ function stream:writeAsync(data, blockSize)
 			blockSize = blockSize,
 		})
 		return
+	end
+
+	if #data > blockSize * maxConcurrentPackets then
+		-- we need segmentation
+		local segmentSize = blockSize * maxConcurrentPackets
+		table.insert(self.pendingWriteBuffer, {
+			data = data:sub(segmentSize+1),
+			blockSize = blockSize,
+		})
+		data = data:sub(1, segmentSize)
 	end
 
 	local packetCount = math.ceil(#data / blockSize)
@@ -247,7 +283,6 @@ function stream:close()
 	self.readBuffer = "" -- stops reading
 end
 
-local osp = {}
 
 ---@type rcps.vtable
 local _CLIENT_VTABLE = {
@@ -279,6 +314,12 @@ local _CLIENT_VTABLE = {
 		if not s then return false, "" end
 		s:_unsafe_handlePacket(data)
 		return true, ""
+	end,
+	lost = function(sesh, id)
+		---@type osp.stream
+		local s = sesh.data
+		if not s then return end
+		s:_unsafe_handleLoss()
 	end,
 }
 
@@ -331,6 +372,11 @@ function osp.open(port, callback, keys)
 			local s = sesh.data
 			s:_unsafe_handlePacket(data)
 			return true, ""
+		end,
+		lost = function(sesh, id)
+			---@type osp.stream
+			local s = sesh.data
+			s:_unsafe_handleAck()
 		end,
 	}
 

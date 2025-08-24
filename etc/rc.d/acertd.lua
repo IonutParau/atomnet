@@ -91,6 +91,8 @@ local certVTable = {
 	end,
 	timeout = function (sesh, packetID) end,
 	responded = function (sesh, packetID, accepted, response) end,
+	lost = function (sesh, packetID)
+	end,
 }
 
 local function setup()

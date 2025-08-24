@@ -185,6 +185,8 @@ local mailVtable = {
 	end,
 	responded = function (sesh, packetID, accepted, response)
 	end,
+	lost = function (sesh, packetID)
+	end
 }
 
 local _TIMER

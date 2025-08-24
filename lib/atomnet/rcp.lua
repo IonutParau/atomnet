@@ -44,6 +44,7 @@ rcp_data(srcAddress: integer, srcPort: integer, port: integer, data: string, pac
 rcp_ack(srcAddress: integer, srcPort: integer, port: integer, data: string, packetID: string)
 rcp_rejected(srcAddress: integer, srcPort: integer, port: integer, data: string, packetID: string)
 rcp_timeout(srcAddress: integer, srcPort: integer, port: integer, packetID: string)
+rcp_lost(srcAddress: integer, srcPort: integer, port: integer, packetID: string)
 ]]
 
 local atomnet = require("atomnet")
@@ -247,6 +248,7 @@ local function rcp_timer()
 			p.timesLeft = p.timesLeft - 1
 			if p.timesLeft > 0 then
 				p.timeoutDeadline = now + p.timeout
+				event.push("rcp_lost", p.src, p.srcPort, p.port, p.uuid)
 				rcp_emit_packet(p)
 			else
 				-- just... bye bye
