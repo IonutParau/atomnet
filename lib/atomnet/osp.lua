@@ -22,7 +22,9 @@ local event = require("event")
 local osp = {}
 
 osp.minimumCongestionWindow = 1
-osp.maximumCongestionWindow = 4
+osp.maximumCongestionWindow = 32
+osp.globalCongestionLimit = 32
+osp.currentGlobalPacketCount = 0
 
 ---@class osp.stream
 ---@field id string
@@ -187,10 +189,11 @@ end
 
 function stream:_unsafe_handleAck()
 	self.pendingWritePacketsLeft = self.pendingWritePacketsLeft - 1
+	osp.currentGlobalPacketCount = osp.currentGlobalPacketCount - 1
 	if self.pendingWritePacketsLeft == 0 then
 		-- successful transmission
 		if not self.packetsWereLost then
-			self.congestionWindow = math.min(self.congestionWindow * 2, osp.maximumCongestionWindow)
+			self.congestionWindow = math.min(self.congestionWindow + 1, osp.maximumCongestionWindow)
 		end
 		if #self.pendingWriteBuffer > 0 then
 			local buf = table.remove(self.pendingWriteBuffer, 1)
@@ -200,8 +203,10 @@ function stream:_unsafe_handleAck()
 end
 
 function stream:_unsafe_handleLoss()
-	self.packetsWereLost = true
-	self.congestionWindow = math.max(self.congestionWindow - 1, osp.minimumCongestionWindow)
+	if not self.packetsWereLost then
+		self.packetsWereLost = true
+		self.congestionWindow = math.max(math.floor(self.congestionWindow / 2), osp.minimumCongestionWindow)
+	end
 end
 
 ---@param data string
@@ -209,6 +214,10 @@ end
 ---@param maxConcurrentPackets? integer
 function stream:writeAsync(data, blockSize, maxConcurrentPackets)
 	if self:isDisconnected() then return end
+
+	if osp.currentGlobalPacketCount + self.congestionWindow > osp.globalCongestionLimit then
+		self.congestionWindow = osp.minimumCongestionWindow
+	end
 
 	blockSize = blockSize or atomnet.recommendedBufferSize()
 	maxConcurrentPackets = maxConcurrentPackets or self.congestionWindow
@@ -234,6 +243,7 @@ function stream:writeAsync(data, blockSize, maxConcurrentPackets)
 
 	local packetCount = math.ceil(#data / blockSize)
 	self.pendingWritePacketsLeft = packetCount
+	osp.currentGlobalPacketCount = osp.currentGlobalPacketCount + packetCount
 	for i=1, #data, blockSize do
 		local chunk = data:sub(i, i + blockSize - 1)
 		local encoded = string.pack(">I4>I2", self.writingOffset + i - 1, #chunk) .. chunk
@@ -270,6 +280,8 @@ end
 function stream:disconnect()
 	self:blockForWrites()
 	rcps.disconnect(self.session, rcps.exit.closed, "")
+	osp.currentGlobalPacketCount = osp.currentGlobalPacketCount - self.pendingWritePacketsLeft
+	self.pendingWritePacketsLeft = 0
 	-- cleans up memory faster
 	self.pendingReadBuffer = {}
 end

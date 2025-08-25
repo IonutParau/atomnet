@@ -42,8 +42,7 @@ struct rfs_statFileResponse {
 enum rfs_statFileFlags {
 	READABLE = 1,
 	WRITABLE = 2,
-	EXECUTABLE = 4,
-	DIRECTORY = 8,
+	DIRECTORY = 4,
 };
 
 struct rfs_move {
@@ -133,8 +132,7 @@ rfs.port = 21
 rfs.statFlags = {
 	readable = 1,
 	writable = 2,
-	executable = 4,
-	directory = 8,
+	directory = 4,
 }
 
 ---@class rfs.session
@@ -276,6 +274,17 @@ end
 function session:downloadFile(path, off, len)
 	local size = self:downloadFilePrefix(path, off, len)
 	return (assert(self.stream:read(size), "bad response"))
+end
+
+---@param path string
+---@return integer
+function session:listPrefix(path)
+	self.stream:write("LS" .. self.token .. path .. string.char(0))
+	self:assertResponse()
+	local countStr = assert(self.stream:read(2), "bad response")
+	local count = string.unpack(">I2", countStr)
+
+	return count
 end
 
 ---@param path string
